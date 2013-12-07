@@ -1,7 +1,8 @@
-@(message: String)
+@()
 
-@main("Welcome to Play 2.1") {
+@main("YouTube Player") {
     
-    @play20.welcome(message)
-    
+    <button><h2><a href="@routes.Application.player">Player</a></h2></button>
+    <br/>
+    <button><h2><a href="@routes.Application.connect">Remote</a></h2></button>
 }

@@ -1,0 +1,17 @@
+@()
+
+@main("Connect to player") {
+    
+    <script>
+    connect = function () {
+        var playerId = $('#inputPlayerId').val()
+        window.location = "@routes.Application.remote(0)"+playerId
+    }
+    </script>
+    
+    <h2>Enter player ID:</h2>
+    <br>
+    <input type="text" id="inputPlayerId"></input>
+    <br>
+    <input type="submit" onclick="connect();"/>
+}

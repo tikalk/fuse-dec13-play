@@ -1,0 +1,21 @@
+@(playerId:Int, results:Iterable[SearchResult])
+
+@main("YouTube Remote") {
+    <script>
+    search = function() {
+    	var query = $('#search').val()
+        window.location = "@routes.Application.remote(0)"+@playerId+"?search="+query
+    }
+    </script>
+    <h2>You are connected to @playerId</h2>
+    <br/>
+    <input id="search" type="text"></input>
+    <input type="submit" onclick="search();"></input>
+    <hr/>
+    @results.map {result =>
+        <a href="@routes.Application.remotePlay(playerId, result.videoId, result.thumbnailUrl)">
+          <img src="@result.thumbnailUrl"/>
+        </a>
+        <br/>
+    }
+}
