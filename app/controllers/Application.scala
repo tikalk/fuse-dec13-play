@@ -43,11 +43,13 @@ object Application extends Controller {
   }
   
   def player = Action {implicit requestHeader =>
+    println("I am "+requestHeader.host)
     val playerId = Random.nextInt(9999)
     Ok(views.html.player(playerId))
   }
   
   def remote(playerId:Int, search:String="") = Action {requestHeader =>
+    println("I am "+requestHeader.host)
     if(playersMap.contains(playerId)) {
       val results = youtubeSearch(search)
       Ok(views.html.remote(playerId, results))
