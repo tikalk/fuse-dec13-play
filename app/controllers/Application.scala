@@ -41,15 +41,22 @@ object Application extends Controller {
   def index = Action {
     Ok(views.html.index())
   }
-  
+
+  private def printMyIp = {
+    import java.net._;
+    import java.io._;
+
+    val thisIp = InetAddress.getLocalHost();
+    println("My IP:"+thisIp.getHostAddress());
+  }
   def player = Action {implicit requestHeader =>
-    println("I am "+requestHeader.host)
+    printMyIp
     val playerId = Random.nextInt(9999)
     Ok(views.html.player(playerId))
   }
   
   def remote(playerId:Int, search:String="") = Action {requestHeader =>
-    println("I am "+requestHeader.host)
+    printMyIp
     if(playersMap.contains(playerId)) {
       val results = youtubeSearch(search)
       Ok(views.html.remote(playerId, results))
