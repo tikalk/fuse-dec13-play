@@ -3,11 +3,25 @@
 @main("Youtube Player") {
     
     <h2>Your player ID: @playerId</h2>
+
+    </br>
+
+    <h2 id="socketError">WebSocket not connected</h2>
     
     <script>
       var wsUrl = "@routes.Application.playerWebSocket(playerId).webSocketURL()"
       var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
       remoteWebSocket = new WS (wsUrl)
+
+      remoteWebSocket.onerror = function(evt) {
+          $("#socketError").text(evt.data)
+          $("#socketError").show()
+      }
+
+      remoteWebSocket.onopen = function() {
+          $("#socketError").hide()
+          remoteWebSocket.send("WS is open")
+      }
 
       remoteWebSocket.onmessage = function(message) {
         var data = message.data
