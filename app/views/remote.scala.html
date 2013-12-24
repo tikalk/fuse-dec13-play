@@ -1,16 +1,45 @@
 @(playerId:Int, results:Iterable[SearchResult])
 
 @main("YouTube Remote") {
+
     <script>
     search = function() {
     	var query = $('#search').val()
         window.location = "@routes.Application.remote(0)"+@playerId+"?search="+query
     }
+
+    autocomplete = function(term, response) {
+        var query = $('#search').val()
+        $.ajax({
+            url: "@routes.Application.autocomplete("")"+term,
+//            dataType: 'jsonp',
+            success: function(data, textStatus, request) {
+                        response( $.map( data[1], function(item) {
+                            return {
+                                label: item[0],
+                                value: item[0]
+                            }
+                        }));
+                    }
+        });
+    }
+
+    $(function() {
+        $("#search").autocomplete({
+            source: function(request, response){
+                autocomplete( request.term, response)
+            },
+            select: function( event, ui ) {
+                $("#search_submit").click();
+            }
+        })
+    });
+
     </script>
     <h2>You are connected to @playerId</h2>
     <br/>
     <input id="search" type="text"></input>
-    <input type="submit" onclick="search();"></input>
+    <input id="search_submit" type="submit" onclick="search();"></input>
     <hr/>
     @results.map {result =>
         <a href="@routes.Application.remotePlay(playerId, result.videoId, result.thumbnailUrl)">

@@ -8,6 +8,7 @@ GET     /player                     controllers.Application.player
 GET     /remote/play                controllers.Application.remotePlay(playerId:Int, videoId:String, thumbnailUrl:String)
 GET     /remote/:playerId           controllers.Application.remote(playerId:Int, search ?= "")
 GET     /connect                    controllers.Application.connect
+GET     /autocomplete               controllers.Application.autocomplete(search: String)
 GET     /playerWs/:playerId         controllers.Application.playerWebSocket(playerId:Int)
 
 # Map static resources from the /public folder to the /assets URL path
