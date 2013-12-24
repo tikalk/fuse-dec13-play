@@ -6,7 +6,6 @@ import play.api.mvc._
 import scala.collection._
 import scala.util.Random
 import play.api.libs.iteratee.Iteratee
-import play.api.libs.iteratee.Enumerator
 import play.api.libs.iteratee.Concurrent._
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -14,6 +13,7 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import play.api.libs.json._
 import models.SearchResult
+import ExecutionContext.Implicits.global
 
 object Application extends Controller {
   case class PlayerInfo(playerId:Int, channel:Channel[String])
@@ -22,18 +22,21 @@ object Application extends Controller {
 
   def playerWebSocket(playerId:Int) = WebSocket.using[String] { header =>
     
-    val in = Iteratee.foreach[String]{s =>
-      println(s) //for debug only, client is not expected to send anything
-    } mapDone { _ =>
-      println("player disconnected: "+playerId)
-      playersMap.remove(playerId)
-    }
-
     val (enumerator, channel) = broadcast[String]
     val myPlayerInfo = PlayerInfo(playerId, channel)
     
-    if(playersMap.putIfAbsent(playerId, myPlayerInfo).isDefined)
+    val in = Iteratee.foreach[String]{s =>
+      println(s) //for debug only, client is not expected to send anything
+    } map { _ =>
+      println("player disconnected: "+playerId)
+      playersMap.remove(playerId)
+      channel.eofAndEnd
+    }
+
+    if(playersMap.putIfAbsent(playerId, myPlayerInfo).isDefined) {
+      channel.eofAndEnd
       throw new IllegalStateException("Duplicate player ID")
+    }
     
     (in, enumerator)
   }
@@ -44,7 +47,6 @@ object Application extends Controller {
 
   private def printMyIp = {
     import java.net._;
-    import java.io._;
 
     val thisIp = InetAddress.getLocalHost();
     println("My IP:"+thisIp.getHostAddress());
@@ -58,7 +60,7 @@ object Application extends Controller {
   def remote(playerId:Int, search:String="") = Action {requestHeader =>
     printMyIp
     if(playersMap.contains(playerId)) {
-      val results = youtubeSearch(search)
+      val results = youtubeSearch(search, playerId)
       Ok(views.html.remote(playerId, results))
     } else {
       println("no id "+playerId)
@@ -66,10 +68,39 @@ object Application extends Controller {
     }
   }
   
-  private def youtubeSearch(search:String):Iterable[SearchResult] = {
+  private def parse(search : String) : String =
+  {
+    //println(search)
+    val pattern = ".*watch\\?v=(\\w*)$".r ;
+    val res : String = search match {
+        case pattern(group) => group
+        case _ => ""
+    }
+    
+    //println(res)
+    return res;
+  }
+  
+  private def youtubeSearch(search: String, playerId: Int): Iterable[SearchResult] = {
     if (search.isEmpty())
       return Nil
-    import ExecutionContext.Implicits.global
+
+    // if user pastes full URL from YouTube, play it
+    if ((search.startsWith("http://www.youtube.com")) || (search.startsWith("www.youtube.com"))) {
+      
+      // parse 'search' to retrieve the videoId
+      val videoId : String = parse(search);	
+      
+      playersMap.get(playerId) match {
+        case Some(playerInfo) =>
+          playerInfo.channel.push(videoId);
+        case _ =>
+          println("no id " + playerId)
+      }
+      return Nil
+    }
+
+    // use youtube API to search    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
     val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
     val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
     val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
@@ -108,4 +139,5 @@ object Application extends Controller {
   def connect = Action {
     Ok(views.html.connect())
   }
+  
 }
