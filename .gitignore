@@ -16,3 +16,5 @@ dist
 .target
 bin
 /.cache
+.worksheet
+*.DS_Store

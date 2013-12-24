@@ -29,20 +29,23 @@ import play.modules.reactivemongo.MongoController
 import play.modules.reactivemongo.json.collection.JSONCollection
 import play.modules.reactivemongo.json.collection.JSONCollection
 import reactivemongo.api._
+
+import play.api.libs.json._
+import models.SearchResult
+import ExecutionContext.Implicits.global
+import play.api.libs.ws.Response
+
 object Application extends Controller with MongoController {
-   def collection: JSONCollection = db.collection[JSONCollection]("videos")
+  def collection: JSONCollection = db.collection[JSONCollection]("videos")
   case class PlayerInfo(playerId:Int, channel:Channel[String])
-  
   
   
   val playersMap:concurrent.Map[Int, PlayerInfo] = new concurrent.TrieMap()
 
   def playerWebSocket(playerId:Int) = WebSocket.using[String] { header =>
-    
+
     val (enumerator, channel) = broadcast[String]
     val myPlayerInfo = PlayerInfo(playerId, channel)
-  
-    
     val in = Iteratee.foreach[String]{s =>
       println(s) //for debug only, client is not expected to send anything
     } map { _ =>
@@ -55,19 +58,10 @@ object Application extends Controller with MongoController {
       channel.eofAndEnd
       throw new IllegalStateException("Duplicate player ID")
     }
-    
+
     (in, enumerator)
   }
    
-//   def createVideoInfo = Action.async{
-//    val user = User(29, "John", "Smith", List(
-//      Feed("Slashdot news", "http://slashdot.org/slashdot.rdf")))
-//    // insert the user
-//    val futureResult = collection.insert(user)
-//      // when the insert is performed, send a OK 200 result
-//      futureResult.map(_ => Ok)
-//  }
-  
   def index = Action {
     Ok(views.html.index())
   }
@@ -83,48 +77,56 @@ object Application extends Controller with MongoController {
     val playerId = Random.nextInt(9999)
     Ok(views.html.player(playerId))
   }
-  
-  def remote(playerId:Int, search:String="") = Action {requestHeader =>
-    printMyIp
-    if(playersMap.contains(playerId)) {
-      val results = youtubeSearch(search)
-      Ok(views.html.remote(playerId, results))
-    } else {
-      println("no id "+playerId)
-      Ok(views.html.disconnected(playerId))
+
+  def parseResponse(items: Seq[JsValue]):Seq[models.SearchResult]={
+
+    for {item <- items
+         _ = item if (item\"id"\"videoId").asOpt[String].nonEmpty
+    } yield {
+      val id = (item\"id"\"videoId").as[String]
+      val thumbnails = (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
+      SearchResult ( id  , thumbnails)
     }
   }
-  
-  private def youtubeSearch(search:String):Iterable[SearchResult] = {
-    if (search.isEmpty())
-      return Nil
-    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
-    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
-    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
-            ("part","snippet"),
-            ("q",search),
-            ("key",apiKey),
-            ("maxResults","10")            
-        )
-    val futureGet:Future[libs.ws.Response] = request.get()
-    val getResponse = Await.result(futureGet, 10 seconds)
-    
-    val body = getResponse.body //handy for debugging
-    
-    val json = getResponse.json
-    val items = (json\"items").as[JsArray].value
-    for(item <- items)
-      yield {
-        //println(item.toString)
-        SearchResult (
-          (item\"id"\"videoId").as[String],
-          (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
-        )
+
+  def remote(playerId:Int, search:String="") = Action.async {requestHeader =>
+    printMyIp
+    if(playersMap.contains(playerId)) {
+      val resultsFuture = youtubeSearch(search)
+      val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
+      Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
+        case response: Response =>{
+          val json = response.json
+          val items = (json\"items").as[JsArray].value
+
+          Ok(views.html.remote(playerId, parseResponse(items)))
+
+        }
+        case i: Int => InternalServerError("Oooppppps!!!")
       }
+
+
+    } else {
+      println("no id "+playerId)
+      Future.successful(Ok(views.html.disconnected(playerId)))
+    }
   }
 
- 
-  
+  private def youtubeSearch(search: String):Future[Response]={
+
+    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
+    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
+
+    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
+      ("part","snippet"),
+      ("q",search),
+      ("key",apiKey),
+      ("maxResults","10")
+    )
+    val futureGet:Future[libs.ws.Response] = request.get()
+    futureGet
+  }
+
   private def insertToDb(playerId:Int, videoId:String): Future[Boolean] = {
     val videoInfo = VideoInfo(playerId, videoId)
     // insert the user
@@ -152,9 +154,9 @@ object Application extends Controller with MongoController {
         Future.successful(Ok(views.html.disconnected(playerId)))
     }
   }
-  
+
   def connect = Action {
     Ok(views.html.connect())
   }
-  
+
 }
