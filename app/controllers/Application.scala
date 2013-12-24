@@ -85,13 +85,12 @@ object Application extends Controller {
     
     val json = getResponse.json
     val items = (json\"items").as[JsArray].value
-    for(item <- items)
-      yield {
-        //println(item.toString)
-        SearchResult (
-          (item\"id"\"videoId").as[String],
-          (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
-        )
+    for {item <- items
+         _ = item if (item\"id"\"videoId").asOpt[String].nonEmpty
+      } yield {
+          val id = (item\"id"\"videoId").as[String]
+          val thumbnails = (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
+          SearchResult ( id  , thumbnails)
       }
   }
   
