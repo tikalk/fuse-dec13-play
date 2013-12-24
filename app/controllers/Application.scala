@@ -14,17 +14,17 @@ import scala.concurrent.ExecutionContext
 import play.api.libs.json._
 import models.SearchResult
 import ExecutionContext.Implicits.global
-
+import play.api.libs.ws.Response
 object Application extends Controller {
   case class PlayerInfo(playerId:Int, channel:Channel[String])
-  
+
   val playersMap:concurrent.Map[Int, PlayerInfo] = new concurrent.TrieMap()
 
   def playerWebSocket(playerId:Int) = WebSocket.using[String] { header =>
-    
+
     val (enumerator, channel) = broadcast[String]
     val myPlayerInfo = PlayerInfo(playerId, channel)
-    
+
     val in = Iteratee.foreach[String]{s =>
       println(s) //for debug only, client is not expected to send anything
     } map { _ =>
@@ -37,10 +37,10 @@ object Application extends Controller {
       channel.eofAndEnd
       throw new IllegalStateException("Duplicate player ID")
     }
-    
+
     (in, enumerator)
   }
-  
+
   def index = Action {
     Ok(views.html.index())
   }
@@ -56,75 +56,57 @@ object Application extends Controller {
     val playerId = Random.nextInt(9999)
     Ok(views.html.player(playerId))
   }
-  
-  def remote(playerId:Int, search:String="") = Action {requestHeader =>
-    printMyIp
-    if(playersMap.contains(playerId)) {
-      val results = youtubeSearch(search, playerId)
-      Ok(views.html.remote(playerId, results))
-    } else {
-      println("no id "+playerId)
-      Ok(views.html.disconnected(playerId))
-    }
-  }
-  
-  private def parse(search : String) : String =
-  {
-    //println(search)
-    val pattern = ".*watch\\?v=(\\w*)$".r ;
-    val res : String = search match {
-        case pattern(group) => group
-        case _ => ""
-    }
-    
-    //println(res)
-    return res;
-  }
-  
-  private def youtubeSearch(search: String, playerId: Int): Iterable[SearchResult] = {
-    if (search.isEmpty())
-      return Nil
 
-    // if user pastes full URL from YouTube, play it
-    if ((search.startsWith("http://www.youtube.com")) || (search.startsWith("www.youtube.com"))) {
-      
-      // parse 'search' to retrieve the videoId
-      val videoId : String = parse(search);	
-      
-      playersMap.get(playerId) match {
-        case Some(playerInfo) =>
-          playerInfo.channel.push(videoId);
-        case _ =>
-          println("no id " + playerId)
-      }
-      return Nil
-    }
+  def parseResponse(items: Seq[JsValue]):Seq[models.SearchResult]={
 
-    // use youtube API to search    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
-    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
-    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
-    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
-            ("part","snippet"),
-            ("q",search),
-            ("key",apiKey),
-            ("maxResults","10")            
-        )
-    val futureGet:Future[libs.ws.Response] = request.get()
-    val getResponse = Await.result(futureGet, 10 seconds)
-    
-    val body = getResponse.body //handy for debugging
-    
-    val json = getResponse.json
-    val items = (json\"items").as[JsArray].value
     for {item <- items
          _ = item if (item\"id"\"videoId").asOpt[String].nonEmpty
-      } yield {
-          val id = (item\"id"\"videoId").as[String]
-          val thumbnails = (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
-          SearchResult ( id  , thumbnails)
-      }
+    } yield {
+      val id = (item\"id"\"videoId").as[String]
+      val thumbnails = (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
+      SearchResult ( id  , thumbnails)
+    }
   }
-  
+
+  def remote(playerId:Int, search:String="") = Action.async {requestHeader =>
+    printMyIp
+    if(playersMap.contains(playerId)) {
+      val resultsFuture = youtubeSearch(search)
+      val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
+      Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
+        case response: Response =>{
+          val json = response.json
+          val items = (json\"items").as[JsArray].value
+
+          Ok(views.html.remote(playerId, parseResponse(items)))
+
+        }
+        case i: Int => InternalServerError("Oooppppps!!!")
+      }
+
+
+    } else {
+      println("no id "+playerId)
+      Future.successful(Ok(views.html.disconnected(playerId)))
+    }
+  }
+
+  private def youtubeSearch(search: String):Future[Response]={
+
+    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
+    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
+
+    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
+      ("part","snippet"),
+      ("q",search),
+      ("key",apiKey),
+      ("maxResults","10")
+    )
+    val futureGet:Future[libs.ws.Response] = request.get()
+    futureGet
+  }
+
+
   def remotePlay(playerId:Int, videoId:String, thumbnailUrl:String) = Action {
     playersMap.get(playerId) match {
       case Some(playerInfo) =>
@@ -135,9 +117,9 @@ object Application extends Controller {
         Ok(views.html.disconnected(playerId))
     }
   }
-  
+
   def connect = Action {
     Ok(views.html.connect())
   }
-  
+
 }
