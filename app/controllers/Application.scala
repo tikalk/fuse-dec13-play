@@ -1,22 +1,39 @@
 package controllers
 
-
-import play.api._
-import play.api.mvc._
 import scala.collection._
-import scala.util.Random
-import play.api.libs.iteratee.Iteratee
-import play.api.libs.iteratee.Concurrent._
 import scala.concurrent.Await
-import scala.concurrent.duration._
-import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
-import play.api.libs.json._
-import models.SearchResult
-import ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
+import scala.concurrent.ExecutionContext
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.Random
 
-object Application extends Controller {
+import models._
+import models.JsonFormats._
+import models.SearchResult
+import play.api._
+import play.api._
+import play.api.libs.iteratee.Concurrent._
+import play.api.libs.iteratee.Iteratee
+import play.api.libs.json._
+import play.api.libs.json._
+import play.api.mvc._
+import play.api.mvc._
+import play.modules.reactivemongo.MongoController
+import play.modules.reactivemongo.MongoController
+import play.modules.reactivemongo.json.collection.JSONCollection
+import play.modules.reactivemongo.json.collection.JSONCollection
+import reactivemongo.api._
+object Application extends Controller with MongoController {
+   def collection: JSONCollection = db.collection[JSONCollection]("videos")
   case class PlayerInfo(playerId:Int, channel:Channel[String])
+  
+  
   
   val playersMap:concurrent.Map[Int, PlayerInfo] = new concurrent.TrieMap()
 
@@ -24,6 +41,7 @@ object Application extends Controller {
     
     val (enumerator, channel) = broadcast[String]
     val myPlayerInfo = PlayerInfo(playerId, channel)
+  
     
     val in = Iteratee.foreach[String]{s =>
       println(s) //for debug only, client is not expected to send anything
@@ -40,6 +58,15 @@ object Application extends Controller {
     
     (in, enumerator)
   }
+   
+//   def createVideoInfo = Action.async{
+//    val user = User(29, "John", "Smith", List(
+//      Feed("Slashdot news", "http://slashdot.org/slashdot.rdf")))
+//    // insert the user
+//    val futureResult = collection.insert(user)
+//      // when the insert is performed, send a OK 200 result
+//      futureResult.map(_ => Ok)
+//  }
   
   def index = Action {
     Ok(views.html.index())
@@ -48,8 +75,8 @@ object Application extends Controller {
   private def printMyIp = {
     import java.net._;
 
-    val thisIp = InetAddress.getLocalHost();
-    println("My IP:"+thisIp.getHostAddress());
+//    val thisIp = InetAddress.getLocalHost();
+//    println("My IP:"+thisIp.getHostAddress());
   }
   def player = Action {implicit requestHeader =>
     printMyIp
@@ -95,15 +122,34 @@ object Application extends Controller {
         )
       }
   }
+
+ 
   
-  def remotePlay(playerId:Int, videoId:String, thumbnailUrl:String) = Action {
+  private def insertToDb(playerId:Int, videoId:String): Future[Boolean] = {
+    val videoInfo = VideoInfo(playerId, videoId)
+    // insert the user
+    val futureResult = collection.insert(videoInfo)
+    println("applied DB save")
+    // when the insert is performed, send a OK 200 result
+    futureResult.map(a => if(a.ok) true else false)
+  }
+
+  def remotePlay(playerId: Int, videoId: String, thumbnailUrl: String) = Action.async {
     playersMap.get(playerId) match {
       case Some(playerInfo) =>
         playerInfo.channel.push(videoId)
-        Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl))
+        val fRes: Future[Boolean] = insertToDb(playerId, videoId)
+        fRes.map(b => if (b) {
+          println("applied DB save success")
+          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl))
+        } else {
+          println("Faled DB save")
+          Ok(views.html.remotePlay(-1, "ERROR", "ERROR"))
+        })
+
       case _ =>
-        println("no id "+playerId)
-        Ok(views.html.disconnected(playerId))
+        println("no id " + playerId)
+        Future.successful(Ok(views.html.disconnected(playerId)))
     }
   }
   
