@@ -1,7 +1,8 @@
-@(playerId:Int, videoId:String, thumbnailUrl:String)
+@(playerId:Int, videoId:String, thumbnailUrl:String, errorMsg:String)
 
 @main("YouTube Player") {
     
     <h2>Playing on @playerId</h2><br/>
+    <h3>@errorMsg</h3>
     <img src="@thumbnailUrl"/>
 }

@@ -114,7 +114,7 @@ object Application extends Controller with MongoController {
     val futureResult = collection.insert(videoInfo)
     println("applied DB save")
     // when the insert is performed, send a OK 200 result
-    futureResult.map(a => if(a.ok) true else false)
+    futureResult.map(_.ok)
   }
 
   def remotePlay(playerId: Int, videoId: String, thumbnailUrl: String) = Action.async {
@@ -124,10 +124,10 @@ object Application extends Controller with MongoController {
         val fRes: Future[Boolean] = insertToDb(playerId, videoId)
         fRes.map(b => if (b) {
           println("applied DB save success")
-          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl))
+          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl, ""))
         } else {
           println("Faled DB save")
-          Ok(views.html.remotePlay(-1, "ERROR", "ERROR"))
+          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl, "Warning: DB error, results not saved"))
         })
 
       case _ =>
