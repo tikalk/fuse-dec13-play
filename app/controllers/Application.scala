@@ -16,8 +16,14 @@ import models.SearchResult
 import ExecutionContext.Implicits.global
 import play.api.libs.ws.Response
 object Application extends Controller {
-  val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
   case class PlayerInfo(playerId:Int, channel:Channel[String])
+
+object Application extends Controller with MongoController {
+  def collection: JSONCollection = db.collection[JSONCollection]("videos")
+  case class PlayerInfo(playerId:Int, channel:Channel[String])
+
+  val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
+
 
   val playersMap:concurrent.Map[Int, PlayerInfo] = new concurrent.TrieMap()
 
@@ -94,6 +100,7 @@ object Application extends Controller {
 
   private def youtubeSearch(search: String):Future[Response]={
 
+    val apiKey = "AIzaSyBL6PS3qcjaI4KSCrysejNsFHNQkHtXShs"
     val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
 
     val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
@@ -121,53 +128,5 @@ object Application extends Controller {
   def connect = Action {
     Ok(views.html.connect())
   }
-
-  def autocomplete(search: String) = Action.async {
-    val youtubeApiUrl = "http://suggestqueries.google.com/complete/search"
-
-    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
-      ("hl","en"),
-      ("ds","yt"),
-      ("client","youtube"),
-      ("hjson","t"),
-      ("cp","1"),
-      ("format","5"),
-      ("alt","json"),
-      ("callback","?"),
-      ("q",search),
-      ("key",apiKey),
-      ("maxResults","10")
-    )
-
-
-    val futureGet:Future[libs.ws.Response] = request.get()
-
-
-    val resultsFuture = futureGet
-    val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
-    Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
-      case response: Response =>{
-        val json = response.json
-        Ok(json)
-      }
-      case i: Int => InternalServerError("Oooppppps!!!")
-    }
-
-
-//    $.ajax({
-//      url: "http://suggestqueries.google.com/complete/search?hl=en&ds=yt&client=youtube&hjson=t&cp=1&q="+query+"&key="+apiKey+"&format=5&alt=json&callback=?",
-//      dataType: 'jsonp',
-//      success: function(data, textStatus, request) {
-//        response( $.map( data[1], function(item) {
-//          return {
-//            label: item[0],
-//            value: item[0]
-//          }
-//        }));
-//      }
-//    });
-    //Ok(views.html.connect())
-  }
-
 
 }
