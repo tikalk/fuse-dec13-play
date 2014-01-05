@@ -42,9 +42,14 @@
     <input id="search_submit" type="submit" onclick="search();"></input>
     <hr/>
     @results.map {result =>
-        <a href="@routes.Application.remotePlay(playerId, result.videoId, result.thumbnailUrl)">
-          <img src="@result.thumbnailUrl"/>
-        </a>
-        <br/>
+        <div id="details">
+            <h3>Title: @result.title</h3>
+            <h5>Published at: @result.publishedAt</h5>
+            <a href="@routes.Application.remotePlay(playerId, result.videoId, result.thumbnailUrl)">
+                      @result.title
+            <img src="@result.thumbnailUrl"/>
+            </a>
+            <br/>
+        </div>
     }
 }

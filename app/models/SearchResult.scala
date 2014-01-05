@@ -1,8 +1,8 @@
 package models
 
 
-case class SearchResult(videoId:String, thumbnailUrl:String)
-case class VideoInfo(playerId:Int, videoId:String)
+case class SearchResult(videoId: String, thumbnailUrl: String,title: String, description: String,publishedAt: String, viewCount: String)
+case class VideoInfo(playerId: Int, videoId: String)
 
 
 

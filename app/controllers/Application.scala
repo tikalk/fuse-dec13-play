@@ -61,31 +61,57 @@ object Application extends Controller with MongoController {
     Ok(views.html.player(playerId))
   }
 
-  def parseResponse(items: Seq[JsValue]):Seq[models.SearchResult]={
+  def extractIds(searchResponse:Response):Iterable[String]={
+    val json = searchResponse.json
+    val items = (json\"items").as[JsArray].value
+    for {
+      item <- items
+      id <- (item\"id"\"videoId").asOpt[String]
+    } yield id
+  }
 
-    for {item <- items
-         _ = item if (item\"id"\"videoId").asOpt[String].nonEmpty
-    } yield {
-      val id = (item\"id"\"videoId").as[String]
-      val thumbnails = (item\"snippet"\"thumbnails"\"medium"\"url").as[String]
-      SearchResult ( id  , thumbnails)
+  def getDetails(ids:Iterable[String]):Future[Response]={
+    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/videos"
+
+    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
+      ("part", "snippet,contentDetails,statistics,status"),
+      ("id", ids.mkString(",")),
+      ("key", apiKey)
+    )
+    val futureGet:Future[libs.ws.Response] = request.get()
+    futureGet
+  }
+
+  def parseDetails(detailsResponse:Response):Seq[SearchResult]={
+    val json = detailsResponse.json
+    val items = (json\"items").as[JsArray].value
+    for {
+      item <- items
+      id <- (item\"id").asOpt[String]
+    } yield{
+      val snippet = item\"snippet"
+      val thumbnails = (snippet\"thumbnails"\"medium"\"url").as[String]
+      val title = (snippet\"title").as[String]
+      val description = (snippet\"description").as[String]
+      val publishedAt = (snippet\"publishedAt").as[String]
+      val viewCount = (item\"statistics"\"viewCount").as[String]
+      SearchResult (id, thumbnails, title, description, publishedAt, viewCount)
     }
   }
 
   def remote(playerId:Int, search:String="") = Action.async {requestHeader =>
     printMyIp
     if(playersMap.contains(playerId)) {
-      val resultsFuture = youtubeSearch(search)
+      val resultsFuture =
+        youtubeSearch(search)
+          .map(extractIds)
+          .flatMap(getDetails)
+          .map(parseDetails)
+
       val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
       Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
-        case response: Response =>{
-          val json = response.json
-          val items = (json\"items").as[JsArray].value
-
-          Ok(views.html.remote(playerId, parseResponse(items)))
-
-        }
-        case i: Int => InternalServerError("Oooppppps!!!")
+        case result: Seq[SearchResult] => Ok(views.html.remote(playerId, result))
+        case i: Int => InternalServerError("Timeout!!!")
       }
 
     } else {
@@ -95,11 +121,10 @@ object Application extends Controller with MongoController {
   }
 
   private def youtubeSearch(search: String):Future[Response]={
-
     val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
 
     val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
-      ("part","snippet"),
+      ("part","id"),
       ("q",search),
       ("key",apiKey),
       ("maxResults","10")
