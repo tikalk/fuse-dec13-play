@@ -3,7 +3,6 @@ package controllers
 import scala.collection._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.util.Random
 
 import models._
@@ -52,13 +51,22 @@ object Application extends Controller with MongoController {
     Ok(views.html.index())
   }
 
-  private def printMyIp = {
-
-  }
   def player = Action {implicit requestHeader =>
-    printMyIp
     val playerId = Random.nextInt(9999)
     Ok(views.html.player(playerId))
+  }
+
+  private def youtubeSearch(search: String):Future[Response]={
+    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
+
+    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
+      ("part","id"),
+      ("q",search),
+      ("key",apiKey),
+      ("maxResults","10")
+    )
+    val futureGet:Future[libs.ws.Response] = request.get()
+    futureGet
   }
 
   def extractIds(searchResponse:Response):Iterable[String]={
@@ -100,38 +108,20 @@ object Application extends Controller with MongoController {
   }
 
   def remote(playerId:Int, search:String="") = Action.async {requestHeader =>
-    printMyIp
-    if(playersMap.contains(playerId)) {
-      val resultsFuture =
-        youtubeSearch(search)
-          .map(extractIds)
-          .flatMap(getDetails)
-          .map(parseDetails)
-
-      val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
-      Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
-        case result: Seq[SearchResult] => Ok(views.html.remote(playerId, result))
-        case i: Int => InternalServerError("Timeout!!!")
+    if(playersMap.contains(playerId))
+      for {
+        searchRes <- youtubeSearch(search)
+        ids = extractIds(searchRes)
+        detailsRes <- getDetails(ids)
+        details = parseDetails(detailsRes)
       }
-
-    } else {
+        yield Ok(views.html.remote(playerId, details))
+    else {
       println("no id "+playerId)
       Future.successful(Ok(views.html.disconnected(playerId)))
     }
   }
 
-  private def youtubeSearch(search: String):Future[Response]={
-    val youtubeApiUrl = "https://content.googleapis.com/youtube/v3/search"
-
-    val request = libs.ws.WS.url(youtubeApiUrl).withQueryString(
-      ("part","id"),
-      ("q",search),
-      ("key",apiKey),
-      ("maxResults","10")
-    )
-    val futureGet:Future[libs.ws.Response] = request.get()
-    futureGet
-  }
 
   private def insertToDb(playerId:Int, videoId:String): Future[Boolean] = {
     val videoInfo = VideoInfo(playerId, videoId)
@@ -143,19 +133,19 @@ object Application extends Controller with MongoController {
   }
 
   def remotePlay(playerId: Int, videoId: String, thumbnailUrl: String) = Action.async {
-    playersMap.get(playerId) match {
-      case Some(playerInfo) =>
+    playersMap.get(playerId).map { playerInfo =>
         playerInfo.channel.push(videoId)
-        val fRes: Future[Boolean] = insertToDb(playerId, videoId)
-        fRes.map(b => if (b) {
-          println("applied DB save success")
-          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl, ""))
-        } else {
-          println("Faled DB save")
-          Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl, "Warning: DB error, results not saved"))
-        })
 
-      case _ =>
+        insertToDb(playerId, videoId).map {
+          case true =>
+            println("applied DB save success")
+            ""
+          case false =>
+            println("Faled DB save")
+            "Warning: DB error, results not saved"
+        } map (errorMsg => Ok(views.html.remotePlay(playerId, videoId, thumbnailUrl, errorMsg)))
+
+    } getOrElse {
         println("no id " + playerId)
         Future.successful(Ok(views.html.disconnected(playerId)))
     }
@@ -182,15 +172,6 @@ object Application extends Controller with MongoController {
       ("maxResults","10")
     )
 
-    val futureGet:Future[libs.ws.Response] = request.get()
-    val resultsFuture = futureGet
-    val timeoutFuture = play.api.libs.concurrent.Promise.timeout(0,  Duration(3000, MILLISECONDS))
-    Future.firstCompletedOf(Seq(resultsFuture, timeoutFuture)).map {
-      case response: Response =>{
-        val json = response.json
-        Ok(json)
-      }
-      case i: Int => InternalServerError("Oooppppps!!!")
-    }
+    request.get().map(response => Ok(response.json))
   }
 }
